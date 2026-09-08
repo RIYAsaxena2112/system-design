@@ -29,6 +29,11 @@
     *    Ownership of a short link is tied to the authenticated user who created it.
     *    See Decision #4 (ownership model) and Decision #5 (auth mechanism) in the decisions log.
 
+8.  List own links
+    *    An authenticated user can retrieve a list of the short links they own.
+    *    Discovered during API design: without this, a user has no way to find a short_code to     
+         delete after creation except recalling it externally. See Decisions Log #9.
+         
 **Explicitly Out of Scope for v1**
 
     -    Editing an existing short URL's destination
