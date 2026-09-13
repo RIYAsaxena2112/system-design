@@ -28,7 +28,8 @@
 * **Choice**: (a) Full user accounts.
 * **Reasoning**: Enables persistent ownership across sessions and devices, and is the most realistic model for a product with accounts.
 
-* **Trade-off accepted**: Adds an entire auth subsystem (signup, login, credential storage, token/session handling) that is tangential to the core distributed-systems problem this project is meant to demonstrate. Mitigation: auth will be designed as a clearly separable module/service boundary, not entangled with core shortening/redirect logic.
+* **Trade-off accepted**: Adds an entire auth subsystem (signup, login, credential storage, token/session handling) that is tangential to the core distributed-systems problem this project is meant to demonstrate. 
+**Mitigation**: auth will be designed as a clearly separable module/service boundary, not entangled with core shortening/redirect logic.
 
 5. **Authentication mechanism**
 * **Options considered**: Stateless JWT (short-lived access token + revocable refresh token) vs. server-side sessions backed by a shared store (e.g. Redis).
@@ -36,7 +37,7 @@
 
 * **Reasoning**: Access tokens are verified via signature only — no DB/cache lookup required — which preserves true statelessness across horizontally scaled app servers (no sticky sessions needed). Also avoids adding auth traffic to the same Redis instance being relied on for redirect-path caching, keeping the two concerns decoupled.
 * **Trade-off accepted**: Revocation is harder than server-side sessions — a stolen access token remains valid until it expires. Mitigated by keeping access token lifetime short (~15 min) and storing refresh tokens server-side so they can be revoked.
-Locked-in regardless of mechanism: passwords hashed with bcrypt/argon2 — plaintext storage is not an option.
+**Locked-in regardless of mechanism**: passwords hashed with bcrypt/argon2 — plaintext storage is not an option.
 
 6. **Read:write traffic ratio assumption**
 * **Options considered**: This is a working assumption, not a binary fork.
@@ -72,3 +73,18 @@ Locked-in regardless of mechanism: passwords hashed with bcrypt/argon2 — plain
 
 *    **Reasoning**: Decision #5 chose short-lived access tokens specifically so they could be renewed via a refresh token, and chose server-side-stored refresh tokens specifically so they could be revoked. Neither mechanism is usable without these endpoints.
 *    **Trade-off accepted**: None significant — both are completions of already-made decisions, not new scope.
+
+11. **Cache population strategy**
+* **Options considered**: Write-through (populate cache at link-creation time) vs. lazy population (populate only after the first read misses cache).
+* **Choice**: Write-through.
+
+* **Reasoning**: A newly created link can go viral and receive a burst of concurrent reads almost immediately. Lazy population risks a cache stampede — many simultaneous misses for the same brand-new link all hitting Primary DB at once. Write volume is trivial (~7 QPS peak), so populating cache at creation time costs almost nothing and removes this cold-start risk entirely.
+* **Trade-off accepted**: Every created link occupies cache space even if never clicked — acceptable given standard LRU eviction will reclaim cold entries.
+
+
+12. **Cache invalidation on delete/expiry**
+* **Options considered**: Rely on cache TTL alone to eventually reflect deletions vs. actively invalidate the entry at delete time.
+* **Choice**: Active invalidation on delete.
+
+* **Reasoning**: Without it, a deleted link could keep resolving successfully from a stale cache entry until TTL naturally expires — silently violating the deletion feature (FR #5).
+* **Trade-off accepted**: One additional cache-delete call on the delete-link code path; negligible cost given delete is low-QPS.
